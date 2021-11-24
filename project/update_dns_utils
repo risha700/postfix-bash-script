@@ -1,12 +1,25 @@
 DIGITALOCEAN_TOKEN
 
-#list
-
-get_domain_dns(){
+retrieve_active_dns(){
   curl -X GET \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $2" \
-    "https://api.digitalocean.com/v2/domains/$1/records"
+    -H "Authorization: Bearer $digitalocean_token" \
+    "https://api.digitalocean.com/v2/domains/$domain/records"
+}
+
+verify_dns(){
+  result_id=echo $current_dns_settings | jq '.domain_records[] |select(.type|test("'"$1"'"))|select(.name|test("'"$2"'")) | .id'
+  if test -z result_id;then
+    log_message "$2 record don't exist"
+    create_dns_record $1 $2
+  fi
+}
+create_dns_record(){
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"'"$1"'","name":"'"$2"'","data":"\"v=DMARC1;p=quarantine;rua=mailto:abuse@'"${domain}"'\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":null}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
 }
 #create
 

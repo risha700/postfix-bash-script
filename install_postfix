@@ -3,6 +3,10 @@
 # "Postfix Submission"
 # "Postfix"
 # "Dovecot Secure IMAP"
+if [[ "$UID" != "0" ]];then
+  log_message "Re-run this script as root"
+  exit 1
+fi
 
 if [[ -n $1 ]];then 
   echo "Reading from configuration file $1"
@@ -26,16 +30,15 @@ log_message(){
   fi
 }
 
-find_and_replace(){
-  sed '/^'"${1}"' =/{h;s/=.*/= '"${2}"'/};${x;/^$/{s//'"${1} = ${2}"'/;H};x}' $3
+find_and_replace(){      
+  ESCAPED_REPLACE=$(printf '%s\n' "$2" | sed -e 's/[\/&]/\\&/g')                                                                                                
+  sed -i"" '/^'"${1}"' =/{h;s/=.*/= '"${ESCAPED_REPLACE}"'/};${x;/^$/{s//'"${1}"' = '"${ESCAPED_REPLACE}"'/;H};x}' $3
+
+}
+uncomment_line(){
+  sed -i '/'"$1"'/s/^#//g' $2
 }
 
-
-# Basic ubuntu setup
-if [[ "$UID" -ne "0" ]];then
-  log_message "Re-run this script as root"
-  exit 1
-fi
 ufw allow "OpenSSH"
 ufw --force reload
 
@@ -43,28 +46,25 @@ apt update -qq
 apt upgrade -y -qq 
 
 apt install python3-certbot-dns-digitalocean certbot -y -qq
-force_read "digitalocean access token \nhttps://cloud.digitalocean.com/account/api/tokens   " digitalocean_token
+force_read "digitalocean access token \nhttps://cloud.digitalocean.com/account/api/tokens  " digitalocean_token
 rm ~/.certbot-creds.ini
 echo "dns_digitalocean_token = $digitalocean_token" >> ~/.certbot-creds.ini
 chmod 600 ~/.certbot-creds.ini
 force_read "FQDN doamin.com " domain
 force_read "webmaster email " webmaster
 
-certbot certonly --agree-tos -m "$webmaster" --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini -d "*.$domain"
+#certbot certonly --agree-tos -m "$webmaster" --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini -d "*.$domain"
 ssl_cert=/etc/letsencrypt/live/"$domain"/fullchain.pem
 ssl_key=/etc/letsencrypt/live/"$domain"/privkey.pem
 
 if [[ ! -f "${ssl_cert}" ]];then
   log_message "certbot didn not perform correctly" && exit 1
 fi
-certbot renew --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini --dns-digitalocean-propagation-seconds 40 --dry-run
+#certbot renew --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini --dns-digitalocean-propagation-seconds 40 --dry-run
 if [[ $? -eq 0 ]];then
-  sed -i".backup" '/certbot/d' '/MAILTO/d' /var/spool/cron/crontabs/root 
+  sed -i".backup" '/certbot|MAILTO/d' /var/spool/cron/crontabs/root 
   echo "MAILTO=root,${webmaster}" >> /var/spool/cron/crontabs/root 
-  echo "1 1 1 * * /usr/bin/certbot renew\
-  --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini\
-  --post-hook 'systemctl reload nginx'" >> /var/spool/cron/crontabs/root 
-
+  echo '1 1 1 * * /usr/bin/certbot renew --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini' >> /var/spool/cron/crontabs/root 
   log_message "=> SSL certificate is ready as auto renewal hook cronjob with alerts to webmaster email"
 fi
 #------------------------------------------------------------------------------------------------------------------------------
@@ -73,8 +73,8 @@ apt update -qq && apt upgrade -y -qq
 log_message "Installing Postfix"
 apt install postfix mailutils -y -qq
 
-log_message "checking dns..."
-
+log_message "verifying domain dns..."
+# DNS CHECk
 current_dns_settings=$(curl -X GET \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $digitalocean_token" \
@@ -83,69 +83,181 @@ current_dns_settings=$(curl -X GET \
 
 
 dmarc_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("_dmarc")) | .id')
-if test -z dmarc_id;then
+if [[ -z "$dmarc_id" ]];then
+  log_message "DMARC record dont exist, creating..."
   curl -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $digitalocean_token" \
-  -d '{"type":"TXT","name":"_dmarc","data":"\"v=DMARC1;p=quarantine;rua=mailto:abuse@'"${domain}"'\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":null}' \
+  -d '{"type":"TXT","name":"_dmarc","data":"\"v=DMARC1;p=quarantine;rua=mailto:abuse@'"${domain}"'\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
   "https://api.digitalocean.com/v2/domains/$domain/records"
+  if [[ $? -eq 0 ]];then log_message "DMARC dns record created";fi
 fi
 
 dkim_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("default._domainkey")) | .id')
-if test -z dkim_id;then
+if  [[ -z "$dkim_id" ]];then
+  log_message "DKIM record dont exist, creating..."
   curl -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $digitalocean_token" \
-  -d '{"type":"TXT","name":"default._domainkey","data":"\"willcome from dkim file\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":null}' \
+  -d '{"type":"TXT","name":"default._domainkey","data":"\"will populate from dkim file\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
   "https://api.digitalocean.com/v2/domains/$domain/records"
+  if [[ $? -eq 0 ]];then log_message "DKIM dns record created";fi
 fi
+
 spf_id=$(echo $current_dns_settings | jq '.domain_records[] |values  |select(.data|test("spf1"))|.id')
-if test -z spf_id;then
+if [[ -z "$spf_id" ]];then
+  log_message "SPF record dont exist, creating..."
   curl -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $digitalocean_token" \
-  -d '{"type":"TXT","name":"@","data":"\"v=spf1 a ~all\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":null}' \
+  -d '{"type":"TXT","name":"@","data":"\"v=spf1 a ~all\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
   "https://api.digitalocean.com/v2/domains/$domain/records"
+  if [[ $? -eq 0 ]];then log_message "SPF dns record created";fi
 fi
 
+log_message "DNS looks fine, proceeding to posfix conf..."
+# Postfix conf
 echo "mail.$domain">>/etc/hostname
-log_message "DNS look fine, proceeding posfix conf"
+postconf -e 'smtpd_tls_cert_file = dovecot'
+postconf -e "smtpd_tls_cert_file = $ssl_cert"
+postconf -e "smtpd_tls_key_file = $ssl_key"
+postconf -e 'smtpd_tls_security_level = encrypt'
+postconf -e 'smtp_tls_note_starttls_offer = yes'
+postconf -e "myhostname = mail.$domain"
+postconf -e "mydomain = $domain"
+postconf -e 'myorigin = $mydomain'
+postconf -e 'mydestination = $myhostname, $mydomain, localhost.$mydomain, localhost'
+postconf -e 'smtpd_tls_security_level = encrypt'
+postconf -e 'smtp_tls_security_level = encrypt'
+postconf -e 'smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtp_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'home_mailbox = Maildir/'
+postconf -e 'smtpd_tls_loglevel = 1'
+postconf -e 'smtpd_tls_received_header = yes'
 
-find_and_replace smtpd_tls_cert_file $ssl_cert /etc/postfix/main.cf
-find_and_replace smtpd_tls_key_file $ssl_key /etc/postfix/main.cf
-find_and_replace smtpd_tls_security_level encrypt /etc/postfix/main.cf
-find_and_replace myhostname  mail.$domain  /etc/postfix/main.cf
-find_and_replace mydomain $domain /etc/postfix/main.cf
-find_and_replace myorigin $mydomain /etc/postfix/main.cf
-find_and_replace mydestination "$myhostname, $mydomain, localhost.$mydomain, localhost" /etc/postfix/main.cf
-find_and_replace smtpd_tls_security_level encrypt /etc/postfix/main.cf
-find_and_replace smtp_tls_security_level encrypt /etc/postfix/main.cf
-find_and_replace smtpd_tls_mandatory_protocols "!SSLv2, !SSLv3, !TLSv1, !TLSv1.1" /etc/postfix/main.cf
-find_and_replace smtpd_tls_protocols "!SSLv2, !SSLv3, !TLSv1, !TLSv1.1" /etc/postfix/main.cf
-find_and_replace smtp_tls_mandatory_protocols "!SSLv2, !SSLv3, !TLSv1, !TLSv1.1 "/etc/postfix/main.cf
-find_and_replace smtp_tls_protocols "!SSLv2, !SSLv3, !TLSv1, !TLSv1.1" /etc/postfix/main.cf
-find_and_replace home_mailbox "Maildir/" /etc/postfix/main.cf
 # prepare for dovecot
-find_and_replace smtpd_sasl_type dovecot /etc/postfix/main.cf
-find_and_replace smtpd_sasl_path private/auth /etc/postfix/main.cf
-find_and_replace smtpd_sasl_auth_enable yes /etc/postfix/main.cf
-find_and_replace smtpd_sasl_security_options noanonymous /etc/postfix/main.cf
-find_and_replace smtpd_sasl_local_domain $myhostname /etc/postfix/main.cf
-find_and_replace smtpd_recipient_restrictions "permit_mynetworks,permit_auth_destination,permit_sasl_authenticated,reject" /etc/postfix/main.cf
+postconf -e 'smtpd_sasl_type = dovecot'
+postconf -e 'smtpd_sasl_path = private/auth'
+postconf -e 'smtpd_sasl_auth_enable = yes'
+postconf -e 'smtpd_sasl_security_options = noanonymous'
+postconf -e 'smtpd_sasl_local_domain = $myhostname'
+postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,permit_auth_destination,permit_sasl_authenticated,reject'
 # prepare for dkim
-find_and_replace smtpd_milters "inet:127.0.0.1:8891" /etc/postfix/main.cf
-find_and_replace non_smtpd_milters "inet:127.0.0.1:8891" /etc/postfix/main.cf
-find_and_replace milter_default_action accept /etc/postfix/main.cf
+postconf -e 'smtpd_milters = inet:127.0.0.1:8891'
+postconf -e 'non_smtpd_milters = inet:127.0.0.1:8891'
+postconf -e 'milter_default_action = accept'
 
 
+log_message "now edit settings in postfix master.cf..."
+uncomment_line "-o syslog_name=postfix/submission" /etc/postfix/master.cf
+uncomment_line "-o smtpd_tls_security_level=encrypt" /etc/postfix/master.cf
+uncomment_line "-o smtpd_sasl_auth_enable=yes" /etc/postfix/master.cf
+uncomment_line "-o smtpd_relay_restrictions=permit_sasl_authenticated,reject" /etc/postfix/master.cf
+
+#------------------------------------------------------------------------------------------------------------------------------
+# Dovecot IMAP SASL conf
+log_message "moving on with dovecot configs..."
+
+apt install dovecot-core dovecot-imapd
+
+mv /etc/dovecot/dovecot.conf /etc/dovecot/dovecot.conf.orig
 
 
+cat >> /etc/dovecot/dovecot.conf<<EOF
+disable_plaintext_auth = yes
+mail_privileged_group = mail
+mail_location = maildir:~/Maildir
 
+userdb {
+      driver = passwd
+}
 
-log_message "moving on with DKIM,SPF..."
+passdb {
+     args = %s
+     driver = pam
+}
 
-apt install opendkim opendkim-tools postfix-policyd-spf-python postfix-pcre
-adduser postfix opendkim
+protocols = "imap"
 
+namespace inbox {
+  inbox = yes
 
+  mailbox Trash {
+    auto = subscribe
+    special_use = \Trash
+  }
+  mailbox Sent {
+    auto = subscribe
+    special_use = \Sent
+  }
+  mailbox Drafts {
+    auto = subscribe
+    special_use = \Drafts
+  }
+  mailbox Spam {
+    auto = subscribe
+    special_use = \Junk
+  }
+  mailbox Archive {
+    auto = subscribe
+    special_use = \Archive
+  }
+}
+#create and autosubscribe to some default folders
 
+service auth {
+      unix_listener /var/spool/postfix/private/auth {
+      mode = 0660
+      user = postfix
+      group = postfix
+    }
+}
+
+ssl = required
+ssl_cert = <$ssl_cert
+ssl_key = <$ssl_key
+EOF
+
+#------------------------------------------------------------------------------------------------------------------------------
+# Install DKIM
+log_message "moving on with DKIM configs..."
+apt-get install opendkim opendkim-tools
+
+mkdir -p /etc/opendkim
+mkdir -p /etc/opendkim/keys
+mkdir -p /etc/opendkim/keys/$domain
+opendkim-genkey -d $domain -s default --directory=/etc/opendkim/keys/$domain
+chown -R opendkim:opendkim /etc/opendkim/keys/$domain
+echo "default._domainkey.$domain $domain:default:/etc/opendkim/keys/$domain/default.private" >> /etc/opendkim/KeyTable
+echo "*@$domain default._domainkey.$domain" >> /etc/opendkim/SigningTable
+ready_dkim=$(cat /etc/opendkim/keys/secure-relay.cf/default.txt|cut -d "(" -f2 |cut -d ")" -f1|cut -d '"' -f2)
+
+dkim_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("default._domainkey")) | .id')
+if  [[ -z "$dkim_id" ]];then
+  log_message "DKIM record dont exist, creating..."
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"TXT","name":"default._domainkey","data":"\"willcome from dkim file\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
+  else
+    re='^[0-9]+$'
+    if ! [[ $dkim_id =~ $re ]];then
+      log_message "updating DKIM record..."
+      curl -X PUT \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $digitalocean_token" \
+      -d '{"data":'""$ready_dkim""'}' \
+      "https://api.digitalocean.com/v2/domains/example.com/records/$dkim_id"
+    fi
+  if [[ $? -eq 0 ]];then log_message "DKIM dns record created";fi
+fi
+
+systemctl restart postfix dovecot 
+log_message "try now !"
+#------------------------------------------------------------------------------------------------------------------------------
+
+# log_message "moving on with DKIM,SPF configs..."
+# apt install opendkim opendkim-tools postfix-policyd-spf-python postfix-pcre
