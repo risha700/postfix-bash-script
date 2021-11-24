@@ -1,0 +1,31 @@
+DIGITALOCEAN_TOKEN
+
+#list
+
+get_domain_dns(){
+  curl -X GET \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $2" \
+    "https://api.digitalocean.com/v2/domains/$1/records"
+}
+#create
+
+# curl -X POST \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+#   -d '{"type":"A","name":"www","data":"162.10.66.0","priority":null,"port":null,"ttl":1800,"weight":null,"flags":null,"tag":null}' \
+#   "https://api.digitalocean.com/v2/domains/example.com/records"
+
+# #update
+# curl -X PUT \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+#   -d '{"name":"blog"}' \
+#   "https://api.digitalocean.com/v2/domains/example.com/records/3352896"
+
+# # Delete
+
+# curl -X DELETE \
+#   -H "Content-Type: application/json" \
+#   -H "Authorization: Bearer $DIGITALOCEAN_TOKEN" \
+#   "https://api.digitalocean.com/v2/domains/example.com/records/3352896"

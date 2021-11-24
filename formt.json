@@ -1,0 +1,131 @@
+https://docs.digitalocean.com/reference/api/api-reference/#operation/list_all_domain_records
+
+jq '.domain_records[] |select(.type|test("TXT")) | {"id":.id, "name":.name}' tmp
+{
+    "domain_records": [
+        {
+            "id": 278573469,
+            "type": "SOA",
+            "name": "@",
+            "data": "1800",
+            "priority": null,
+            "port": null,
+            "ttl": 1800,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278573470,
+            "type": "NS",
+            "name": "@",
+            "data": "ns1.digitalocean.com",
+            "priority": null,
+            "port": null,
+            "ttl": 1800,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278573471,
+            "type": "NS",
+            "name": "@",
+            "data": "ns2.digitalocean.com",
+            "priority": null,
+            "port": null,
+            "ttl": 1800,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278573472,
+            "type": "NS",
+            "name": "@",
+            "data": "ns3.digitalocean.com",
+            "priority": null,
+            "port": null,
+            "ttl": 1800,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278573473,
+            "type": "A",
+            "name": "@",
+            "data": "64.227.38.184",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278573491,
+            "type": "A",
+            "name": "*",
+            "data": "64.227.38.184",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278599968,
+            "type": "A",
+            "name": "www",
+            "data": "64.227.38.184",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278622570,
+            "type": "TXT",
+            "name": "@",
+            "data": "\"v=spf1 a ~all\"",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278738835,
+            "type": "TXT",
+            "name": "default._domainkey",
+            "data": "\"v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1slNvLRQGd0Ua5nY0mGt7fASEERGntGu1RRMiiHtSDTQ6ZuLDJDYJj1ylh9n3iws7GV3un9j8aIZHXxizWohl13GKu1crgounkNeEggodvkCQJ3jMn179chK3zOhsIoZDlSCxqZQ7HHI4QRXyNLI2kfFk2XB3J0XkLUXc0waCGHZZQ7IAIKiOnD6Wwp0hdbvOgKoJjF1cLt5il31NuTdm5yTSi1vPYu4ms9LWFoZ93vcrkfYMdfRceWCUPiSBYt8AjRkVERxEG0m0MIUVqQ2uL4DeEu7mi66egB8uEwK6TuD51Uuv8wzVGWMZzOjo8LJbnveBSp/h1H/Uwcz2QIDAQAB\"",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        },
+        {
+            "id": 278738973,
+            "type": "TXT",
+            "name": "_dmarc",
+            "data": "\"v=DMARC1;p=quarantine;rua=mailto:info@secure-relay.cf\"",
+            "priority": null,
+            "port": null,
+            "ttl": 3600,
+            "weight": null,
+            "flags": null,
+            "tag": null
+        }
+    ],
+    "links": {},
+    "meta": {
+        "total": 10
+    }
+}

@@ -1,0 +1,82 @@
+#!/bin/bash
+# confirm_choice () {
+#     read -p "$1 ([y]es or [N]o): "
+#     case $(echo $REPLY | tr '[A-Z]' '[a-z]') in
+#         y|yes) echo "yes" ;;
+#         *)     echo "no" ;;
+#     esac
+# }
+
+# if [[ "$(which dig)" = "0" ]]
+# then
+#   echo "installing "
+#   # instal dns utils
+#   apt install dnsutils
+# else
+#   echo "we have it!"
+# fi
+# # set domain
+# while [[ -z $domain ]];do
+#     read -p "enter base domain: eg. domain.com: " domain 
+# done
+
+# # check dns records match
+# dns_records="$(dig MX $domain +short |wc -l)"
+
+# check_dns(){
+#   if [[ $dns_records -eq 0 ]]
+#   then
+#   echo "no records found"
+#   else
+#   echo "Found $dns_records MX records"
+#   fi
+# }
+
+# while [[ $dns_records -eq 0 ]];do
+#   opts=( "fix dns on providers end and retry" "continue and ignore")
+#   select opt in "${opts[@]}"
+#     do
+#         case $opt in
+#         "fix dns on providers end and retry" )
+#         dns_records="$(dig MX $domain +short |wc -l)"
+#         check_dns
+#         break
+#         ;;
+#         "continue and ignore" )
+#         dns_records=1
+#         break
+#         ;;
+#         *) echo "invalid option $REPLY try again";;
+#         esac
+#     done
+  
+#   # check_dns
+# done
+# # dig MX $domain +short
+
+
+
+opts=( "add host" "remove host" "Quit")
+  select opt in "${opts[@]}"
+  do
+      case $opt in
+      "add host")
+      read -p "ip address: " host_ip
+      read -p "hostname: " host_name
+      if [[ ! -z $host_ip && $host_name ]];then
+        sed -i "" "s/# custom entries/&\n$host_ip $host_name/"  /etc/hosts 
+      fi
+      break
+      ;;
+      "remove host")
+      read -p "hostname: " host_name
+      sed -i "" "/$host_name/d" /etc/hosts  
+      break
+      ;;
+      "Quit")
+      break
+      ;;
+      *) echo "invalid option $REPLY";;
+
+      esac
+  done
