@@ -1,6 +1,6 @@
 grep -e 'root:' /etc/aliases
 # Adding unix mail user 
-if [[ $(confirm_choice 'Do you want add email root user ?') = 'yes' && $? -eq 1 ]];then
+if [[  $? -eq 1 && $(confirm_choice 'Do you want add email root user ?') = 'yes' ]];then
   read -p 'enter root user name: ' mail_root_user
   read -s -p 'enter root password: ' mail_root_user_pass
   if [[ "$?" -eq "0"&& -n $mail_root_user&& -n  $mail_root_user_pass ]];then

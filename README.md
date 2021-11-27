@@ -1,6 +1,6 @@
 ### |=========> Postfix the easy way <======|
 
-## The movtive :
+## The Motive :
 Automation script that deploys a secured POSTFIX mail server instance "On digital ocean for now" 
 in matter of minutes
 
@@ -12,8 +12,8 @@ in matter of minutes
 
 # how to use?
 ```
-# git clone or download
-wget https://github.com/risha700/postfix-bash-script/tarball/master | tar xf && cd install_postfix
+# git clone or download tar ball
+wget https://github.com/risha700/postfix-bash-script/tarball/master | tar xf
 
 ./run 
  

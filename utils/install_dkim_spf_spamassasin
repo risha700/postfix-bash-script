@@ -17,7 +17,7 @@ if  [[ -z $dkim_id ]];then
   curl -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $digitalocean_token" \
-  -d '{"type":"TXT","name":"default._domainkey","data":'"\"$ready_dkim\""',"priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  -d '{"type":"TXT","name":"default._domainkey","data":'""$ready_dkim""',"priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
   "https://api.digitalocean.com/v2/domains/$domain/records"
   else
     re='^[0-9]+$'
