@@ -80,3 +80,6 @@ opts=( "add host" "remove host" "Quit")
 
       esac
   done
+# test mail
+  openssl s_client -servername mail.sample.com -connect mail.sample.com:pop3s
+  #send email to get report check-auth@verifier.port25.com

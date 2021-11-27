@@ -1,5 +1,6 @@
 ### |================> Postfix the easy way <==============|
 ## Postfix mail server including
-- Dovecot "IMAP POP SASL"
+- Dovecot "IMAP POP"
 - SPF
 - DKIM
+- Spamassasin
