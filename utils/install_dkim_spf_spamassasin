@@ -1,0 +1,121 @@
+# Install DKIM
+log_message "moving on with DKIM configs..."
+apt-get install opendkim opendkim-tools -y -qq
+
+mkdir -p /etc/opendkim
+mkdir -p /etc/opendkim/keys
+mkdir -p /etc/opendkim/keys/$domain
+opendkim-genkey -d $domain -s default --directory=/etc/opendkim/keys/$domain
+chown -R opendkim:opendkim /etc/opendkim/keys/$domain
+echo "default._domainkey.$domain $domain:default:/etc/opendkim/keys/$domain/default.private" >> /etc/opendkim/KeyTable
+echo "*@$domain default._domainkey.$domain" >> /etc/opendkim/SigningTable
+ready_dkim=$(cat /etc/opendkim/keys/$domain/default.txt|cut -d "(" -f2 |cut -d ")" -f1|cut -d '"' -f2 | tr -d '\n')
+
+dkim_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("default._domainkey")) | .id')
+if  [[ -z $dkim_id ]];then
+  log_message "DKIM record dont exist, creating..."
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"TXT","name":"default._domainkey","data":'"\"$ready_dkim\""',"priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
+  else
+    re='^[0-9]+$'
+    if ! [[ $dkim_id =~ $re ]];then
+      log_message "updating DKIM record..."
+      curl -X PUT \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $digitalocean_token" \
+      -d '{"data":'""$ready_dkim""'}' \
+      "https://api.digitalocean.com/v2/domains/example.com/records/$dkim_id"
+    fi
+  if [[ $? -eq 0 ]];then log_message "DKIM dns record created";fi
+fi
+
+
+
+
+cp /etc/opendkim.conf /etc/opendkim.conf.orig
+cat > /etc/opendkim.conf<<EOF
+Syslog                  yes
+UMask                   007
+
+Canonicalization        relaxed/simple
+Mode                    sv
+SubDomains              no
+AutoRestart             yes
+Background              yes
+DNSTimeout              5
+SignatureAlgorithm      rsa-sha256
+
+SigningTable            refile:/etc/opendkim/SigningTable
+KeyTable                /etc/opendkim/KeyTable
+
+ExternalIgnoreList      /etc/opendkim/TrustedHosts
+InternalHosts           /etc/opendkim/TrustedHosts
+
+Socket                  inet:8891@localhost
+
+PidFile                 /var/run/opendkim/opendkim.pid
+OversignHeaders         From
+TrustAnchorFile         /usr/share/dns/root.key
+UserID                  opendkim
+EOF
+
+
+machine_ip=$(hostname -I | awk '{print $1}')
+test -f /etc/opendkim/TrustedHosts && cp /etc/opendkim/TrustedHosts /etc/opendkim/TrustedHosts.orignal 
+cat > /etc/opendkim/TrustedHosts<<EOF
+127.0.0.1
+::1
+localhost
+$(hostname).$domain
+mail.$machine_ip
+mail.$domain
+$domain
+EOF
+
+
+# hooking dkim to postfix 
+# mkdir -p /var/spool/postfix/opendkim
+# # chown postfix:postfix /var/spool/postfix/opendkim
+# chown opendkim:postfix /var/spool/postfix/opendkim
+
+# find_and_replace "SOCKET" '"local:/var/spool/postfix/opendkim/opendkim.sock"' /etc/default/opendkim
+
+# postconf -e "milter_protocol = 6"
+# postconf -e "smtpd_milters = local:opendkim/opendkim.sock"
+# postconf -e "non_smtpd_milters = local:opendkim/opendkim.sock"
+
+
+
+#------------------------------------------------------------------------------------------------------------------------------
+
+# log_message "moving on with DKIM,SPF configs...spamassassin spamc"
+log_message "moving on with SPF configs..."
+apt install postfix-policyd-spf-python postfix-pcre -y -qq
+
+grep policyd-spf /etc/postfix/master.cf || cat >> /etc/postfix/master.cf<<EOF
+policyd-spf  unix  -       n       n       -       0       spawn
+    user=policyd-spf argv=/usr/bin/policyd-spf
+EOF
+
+postconf -e 'policyd-spf_time_limit = 3600'
+postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,permit_auth_destination,permit_sasl_authenticated,reject_unknown_recipient_domain,reject_unauth_destination,reject_rbl_client sbl.spamhaus.org,check_policy_service unix:private/policyd-spf,'
+postconf -e 'smtpd_helo_restrictions = reject_invalid_helo_hostname,reject_non_fqdn_helo_hostname,reject_unknown_helo_hostname'
+postconf -e 'smtpd_client_restrictions = reject_rbl_client dnsbl.sorbs.net'
+# log_message "try now send mail to: check-auth@verifier.port25.com"
+
+#------------------------------------------------------------------------------------------------------------------------------
+#SPAM assasin
+apt install spamassassin spamc -y -qq
+pre_initiated=$(grep spamassassin /etc/postfix/master.cf)
+if [[ $? -eq 1 ]];then
+sed -i"" '/#  -o milter_macro_daemon_name=ORIGINATING/a \ \ -o content_filter=spamassassin' /etc/postfix/master.cf
+cat >> /etc/postfix/master.cf<<EOF
+spamassassin unix  -     n       n       -       -       pipe
+        user=debian-spamd argv=/usr/bin/spamc -f -e
+        /usr/sbin/sendmail -oi -f \${sender} \${recipient}
+
+EOF
+fi

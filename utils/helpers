@@ -1,0 +1,44 @@
+if [[ "$UID" != "0" ]];then
+  log_message "Re-run this script as root"
+  exit 1
+fi
+
+if [[ -n $1 ]];then 
+  echo "Reading from configuration file $1"
+  source $1
+fi
+force_read(){
+  if [[ -z ${!2} ]];then
+    local temp
+    while [[ -z $temp ]];do
+      read -p "$1:  " temp
+    done
+    eval $2=$temp
+  fi
+}
+log_message(){
+  if [[ $? -eq 0 ]];then
+    printf "\e[0;32m \u2713 Success: $1 \e[0m \n"
+  else
+    printf "\e[0;31m \u2713 Failed: $1 \e[0m \n"
+    # exit 1
+  fi
+}
+
+find_and_replace(){      
+  ESCAPED_REPLACE=$(printf '%s\n' "$2" | sed -e 's/[\/&]/\\&/g')
+  sed -i"" '/^'"${1}"'?*=/{h;s/=.*/= '"${ESCAPED_REPLACE}"'/};${x;/^$/{s//'"${1}"' =?*'"${ESCAPED_REPLACE}"'/;H};x}' $3
+
+}
+uncomment_line(){
+  ESCAPED_REPLACE=$(printf '%s\n' "$1" | sed -e 's/[\/&]/\\&/g')
+  sed -i"" -e '/'"$ESCAPED_REPLACE"'/s/^#//g' $2
+}
+
+confirm_choice () {
+    read -p "$1 ([y]es or [N]o): "
+    case $(echo $REPLY | tr '[A-Z]' '[a-z]') in
+        y|yes) echo "yes" ;;
+        *)     echo "no" ;;
+    esac
+}

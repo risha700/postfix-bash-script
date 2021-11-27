@@ -1,0 +1,22 @@
+apt install python3-certbot-dns-digitalocean certbot -y -qq
+force_read "digitalocean access token \n https://cloud.digitalocean.com/account/api/tokens  " digitalocean_token
+echo "dns_digitalocean_token = $digitalocean_token" > ~/.certbot-creds.ini
+chmod 600 ~/.certbot-creds.ini
+force_read "FQDN doamin.com " domain
+force_read "webmaster email will be used in letsencrypt for expiry notification " webmaster
+
+certbot certonly -n --agree-tos --eff-email -q -m "$webmaster" --dns-digitalocean \
+--dns-digitalocean-propagation-seconds 30 --dns-digitalocean-credentials ~/.certbot-creds.ini -d "*.$domain"
+ssl_cert=/etc/letsencrypt/live/$domain/fullchain.pem
+ssl_key=/etc/letsencrypt/live/$domain/privkey.pem
+
+if [[ ! -f "${ssl_cert}" ]];then
+  log_message "certbot didn not perform correctly, fix it first to continue!" && exit 1
+fi
+if [[ $? -eq 0 ]];then
+  sed -i".backup" '/certbot|MAILTO/d' /var/spool/cron/crontabs/root 
+  echo "MAILTO=root,${webmaster}" >> /var/spool/cron/crontabs/root 
+  echo '1 1 1 * * /usr/bin/certbot renew -n --dns-digitalocean --dns-digitalocean-credentials ~/.certbot-creds.ini' >> /var/spool/cron/crontabs/root 
+  log_message "=> SSL certificate is ready with AUTO RENEWAL hook cronjob that alerts to webmaster email"
+fi
+#------------------------------------------------------------------------------------------------------------------------------

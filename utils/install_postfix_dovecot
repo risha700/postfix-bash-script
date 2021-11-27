@@ -1,0 +1,132 @@
+# install postfix
+apt update -qq && apt upgrade -y -qq && apt install jq -y -qq
+log_message "Installing Postfix"
+apt install postfix mailutils -y -qq
+ufw allow "Postfix Submission"
+ufw allow "Postfix"
+
+
+# Postfix conf
+echo "mail.$domain">>/etc/hostname
+log_message "now editing settings in /etc/postfix/master.cf ..."
+postconf -e 'smtpd_tls_cert_file = dovecot'
+postconf -e "smtpd_tls_cert_file = $ssl_cert"
+postconf -e "smtpd_tls_key_file = $ssl_key"
+postconf -e 'smtp_tls_note_starttls_offer = yes'
+postconf -e "myhostname = mail.$domain"
+postconf -e "mydomain = $domain"
+postconf -e 'myorigin = $mydomain'
+postconf -e 'mydestination = $myhostname, $mydomain, localhost.$mydomain, localhost'
+postconf -e 'smtpd_tls_security_level = encrypt'
+postconf -e 'smtp_tls_security_level = encrypt'
+postconf -e 'smtpd_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtpd_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtp_tls_mandatory_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1'
+postconf -e 'home_mailbox = Maildir/'
+postconf -e 'smtpd_tls_loglevel = 1'
+postconf -e 'smtpd_tls_received_header = yes'
+postconf -e 'smtpd_tls_loglevel = 1'
+postconf -e 'smtpd_tls_session_cache_timeout = 3600s'
+postconf -e 'tls_random_source = dev:/dev/urandom'
+postconf -e 'broken_sasl_auth_clients = yes'
+postconf -e 'smtpd_banner = $myhostname ESMTP $mail_name'
+# prepare for dovecot
+postconf -e 'smtpd_sasl_type = dovecot'
+postconf -e 'smtpd_sasl_path = private/auth'
+postconf -e 'smtpd_sasl_auth_enable = yes'
+postconf -e 'smtpd_sasl_security_options = noanonymous'
+postconf -e 'smtpd_sasl_local_domain = $myhostname'
+postconf -e 'smtpd_recipient_restrictions = permit_mynetworks,permit_auth_destination,permit_sasl_authenticated,reject'
+# prepare for dkim
+postconf -e 'smtpd_milters = inet:127.0.0.1:8891'
+postconf -e 'non_smtpd_milters = inet:127.0.0.1:8891'
+postconf -e 'milter_default_action = accept'
+postconf -e 'alias_maps = hash:/etc/aliases'
+# postconf -e 'alias_database = hash:/etc/aliases'
+
+# virtual alias
+# postconf -e "virtual_alias_maps = hash:/etc/postfix/virtual"
+
+# cat>>/etc/postfix/virtual<<EOF
+# postmaster root@$domain
+# abuse postmaster@$domain
+# admin postmaster@$domain
+# EOF
+# postmap /etc/postfix/virtual
+
+# EDIT master.cf
+uncomment_line "-o syslog_name=postfix/submission" /etc/postfix/master.cf
+uncomment_line "-o smtpd_tls_security_level=encrypt" /etc/postfix/master.cf
+uncomment_line "-o smtpd_sasl_auth_enable=yes" /etc/postfix/master.cf
+uncomment_line "-o syslog_name=postfix/smtps" /etc/postfix/master.cf
+uncomment_line "-o smtpd_relay_restrictions=permit_sasl_authenticated,reject" /etc/postfix/master.cf
+sed -i"" -e 's/smtp      inet  n       -       y       -       -       smtpd/smtp      inet  n       -       -       -       -       smtpd/g' /etc/postfix/master.cf
+sed -i"" -e 's/#submission inet n       -       y       -       -       smtpd/submission inet n       -       -       -       -       smtpd/g' /etc/postfix/master.cf
+sed -i"" -e 's/#smtps     inet  n       -       y       -       -       smtpd/smtps     inet  n       -       -       -       -       smtpd/g' /etc/postfix/master.cf
+
+
+#------------------------------------------------------------------------------------------------------------------------------
+# Dovecot IMAP SMTP conf
+log_message "moving on with dovecot configs..."
+
+apt install dovecot-core dovecot-imapd dovecot-pop3d dovecot-lmtpd -y -qq
+ufw allow "Dovecot Secure IMAP"
+
+mv /etc/dovecot/dovecot.conf /etc/dovecot/dovecot.conf.orig
+
+
+cat >> /etc/dovecot/dovecot.conf<<EOF
+disable_plaintext_auth = no
+mail_privileged_group = mail
+mail_location = maildir:~/Maildir
+
+userdb {
+      driver = passwd
+}
+
+passdb {
+     args = %s
+     driver = pam
+}
+
+protocols = imap pop3 lmtp
+
+namespace inbox {
+  inbox = yes
+
+  mailbox Trash {
+    auto = subscribe
+    special_use = \Trash
+  }
+  mailbox Sent {
+    auto = subscribe
+    special_use = \Sent
+  }
+  mailbox Drafts {
+    auto = subscribe
+    special_use = \Drafts
+  }
+  mailbox Spam {
+    auto = subscribe
+    special_use = \Junk
+  }
+  mailbox Archive {
+    auto = subscribe
+    special_use = \Archive
+  }
+}
+#create and autosubscribe to some default folders
+
+service auth {
+      unix_listener /var/spool/postfix/private/auth {
+      mode = 0660
+      user = postfix
+      group = postfix
+    }
+}
+
+ssl = required
+ssl_cert = <$ssl_cert
+ssl_key = <$ssl_key
+EOF

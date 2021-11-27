@@ -1,0 +1,70 @@
+grep -e 'root:' /etc/aliases
+# Adding unix mail user 
+if [[ $(confirm_choice 'Do you want add email root user ?') = 'yes' && $? -eq 1 ]];then
+  read -p 'enter root user name: ' mail_root_user
+  read -s -p 'enter root password: ' mail_root_user_pass
+  if [[ "$?" -eq "0"&& -n $mail_root_user&& -n  $mail_root_user_pass ]];then
+    encrypted_pass=$(perl -e 'print crypt('""$mail_root_user_pass""', "salt"),"\n"')
+    useradd -m -p $encrypted_pass $mail_root_user 
+    # mkdir -p /home/$mail_root_user/Maildir
+    #  maildirmake.dovecot /etc/skel/Maildir
+    #  maildirmake.dovecot /etc/skel/Maildir/.Drafts
+    #  maildirmake.dovecot /etc/skel/Maildir/.Sent
+    #  maildirmake.dovecot /etc/skel/Maildir/.Spam
+    #  maildirmake.dovecot /etc/skel/Maildir/.Trash
+    #  maildirmake.dovecot /etc/skel/Maildir/.Templates
+    #  cp -r /etc/skel/Maildir /home/$mail_root_user/
+    #  chown -R $mail_root_user:$mail_root_user /home/$mail_root_user/Maildir
+    #  chmod -R 700 /home/$mail_root_user/Maildir
+    echo "root: ${mail_root_user}" >> /etc/aliases
+  fi
+  else
+  mail_root_user=$(grep -e 'root:' /etc/aliases |awk '{print $2}') 
+fi
+
+log_message "verifying domain dns..."
+# DNS CHECk
+current_dns_settings=$(curl -X GET \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  "https://api.digitalocean.com/v2/domains/$domain/records")
+
+
+
+dmarc_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("_dmarc")) | .id')
+if [[ -z "$dmarc_id" ]];then
+  log_message "DMARC record dont exist, creating..."
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"TXT","name":"_dmarc","data":"\"v=DMARC1;p=quarantine;rua=mailto:abuse@'"${domain}"'\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
+  if [[ $? -eq 0 ]];then log_message "DMARC dns record created";else log_message "couldn't create DMARC dns record, do it manually";fi
+fi
+
+dkim_id=$(echo $current_dns_settings | jq '.domain_records[] |select(.type|test("TXT"))|select(.name|test("default._domainkey")) | .id')
+if  [[ -z "$dkim_id" ]];then
+  log_message "DKIM record dont exist, creating..."
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"TXT","name":"default._domainkey","data":"\"will populate from dkim file\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
+
+  if [[ $? -eq 0 ]];then log_message "DKIM dns record created";else log_message "couldn't create DKIM dns record, do it manually";fi
+
+fi
+
+spf_id=$(echo $current_dns_settings | jq '.domain_records[] |values  |select(.data|test("spf1"))|.id')
+if [[ -z "$spf_id" ]];then
+  log_message "SPF record dont exist, creating..."
+  curl -X POST \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $digitalocean_token" \
+  -d '{"type":"TXT","name":"@","data":"\"v=spf1 a ~all\"","priority":null,"port":null,"ttl":3600,"weight":null,"flags":null,"tag":"api_print"}' \
+  "https://api.digitalocean.com/v2/domains/$domain/records"
+  if [[ $? -eq 0 ]];then log_message "SPF dns record created";else log_message "couldn't create SPF dns record, do it manually";fi
+
+fi
+
+log_message "DNS looks fine, proceeding with postfix"
